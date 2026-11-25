@@ -1,0 +1,2 @@
+File.WriteText File: $'''%DebugFolder%\\!log.txt''' TextToWrite: $'''[%FormattedDateTime%] (%Iteration%): %ImageError%''' AppendNewLine: True IfFileExists: File.IfFileExists.Append Encoding: File.FileEncoding.Unicode
+File.Move Files: $'''\\\\?\\%ImageFile%''' Destination: MoveFolder IfFileExists: File.IfExists.Overwrite

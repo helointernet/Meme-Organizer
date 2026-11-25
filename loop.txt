@@ -1,0 +1,470 @@
+BLOCK 
+ON BLOCK ERROR all
+
+END
+    DateTime.GetCurrentDateTime.Local DateTimeFormat: DateTime.DateTimeFormat.DateAndTime CurrentDateTime=> CurrentDateTime
+    Text.ConvertDateTimeToText.FromDateTime DateTime: CurrentDateTime StandardFormat: Text.WellKnownDateTimeFormat.SortableDateTime Result=> FormattedDateTime
+    File.GetPathPart File: CurrentMeme FileName=> OriginalFileName Extension=> OriginalExtension
+    Scripting.RunDOSCommand.RunDOSCommand DOSCommandOrApplication: $'''robocopy \"%InboxFolder%\" \"%DebugFolder%\" \"%OriginalFileName%\" /IS''' WorkingDirectory: $'''C:\\Windows\\System32'''
+    SET MemeCopy TO $'''%DebugFolder%\\%OriginalFileName%'''
+    Text.Random UseUpperCaseLetters: True UseLowerCaseLetters: True UseDigits: True UseSymbols: False MinimumLength: 10 MaximumLength: 10 RandomText=> RandomText
+    SET SafeName TO $'''incoming-%Iteration%_%RandomText%'''
+    CALL 'Rename File' FilePath: MemeCopy NewName: $'''%SafeName%%OriginalExtension%''' SourceFolder: DebugFolder NewPath=> MemeCopy
+    # Verify the image filetype
+    Scripting.RunPowershellScript.RunScript Script: $'''$ScriptPath =@\'
+%VerifyScriptPath%
+\'@
+$source =@\'
+%MemeCopy%
+\'@
+
+try {
+	& $ScriptPath `
+		-source $source
+}
+catch {
+	throw $_
+}''' ScriptOutput=> RealExtension ScriptError=> VerifyScriptError
+    SET SafeExtension TO RealExtension
+    IF SafeExtension <> $'''unknown''' THEN
+        SET SafeFileName TO $'''%SafeName%%SafeExtension%'''
+        CALL 'Rename File' FilePath: MemeCopy NewName: SafeFileName SourceFolder: DebugFolder NewPath=> MemeCopy
+        # Check if the file is a .webm, .mp4, or animated .gif
+        Scripting.RunPowershellScript.RunScript Script: $'''$ScriptPath =@\'
+%AnimScriptPath%
+\'@
+$source =@\'
+%MemeCopy%
+\'@
+
+try {
+	& $ScriptPath `
+		-source $source
+}
+catch {
+	throw $_
+}''' ScriptOutput=> IsAnimated ScriptError=> AnimScriptError
+        IF IsAnimated = $'''false''' THEN
+            # Get original md5 hash
+            Scripting.RunPowershellScript.RunScript Script: $'''$ScriptPath =@\'
+%HashScriptPath%
+\'@
+$source =@\'
+%MemeCopy%
+\'@
+
+try {
+	& $ScriptPath `
+		-source $source
+}
+catch {
+	throw $_
+}''' ScriptOutput=> OriginalMd5Hash ScriptError=> HashScriptError
+            # Normalize the image and return its normalized md5 hash
+            Scripting.RunPowershellScript.RunScript Script: $'''$ScriptPath =@\'
+%NormalizeScriptPath%
+\'@
+$source =@\'
+%MemeCopy%
+\'@
+$exifTool =@\'
+%ExiftoolExe%
+\'@
+$hashScript =@\'
+%HashScriptPath%
+\'@
+
+try {
+	& $ScriptPath `
+		-source $source `
+		-exifTool $exifTool `
+		-hashScript $hashScript 
+}
+catch {
+	throw $_
+}''' ScriptOutput=> NormalMd5Hash ScriptError=> NormalizeScriptError
+            SET SafeFileName TO $'''%SafeName%.png'''
+            SET MemeCopy TO $'''%DebugFolder%\\%SafeFileName%'''
+            SET NormalCopy TO $'''%DebugFolder%\\%SafeName%_normal.png'''
+            IF (File.IfFile.Exists File: DbPath) THEN
+                # Check if the same image already exists in the database
+                Scripting.RunPowershellScript.RunScript Script: $'''$ScriptPath =@\'
+%DupeScriptPath%
+\'@
+$imageHash =@\'
+%OriginalMd5Hash%
+\'@
+$dbPath =@\'
+%DbPath%
+\'@
+$sqlPath =@\'
+%SqliteExe%
+\'@
+
+try {
+& $ScriptPath `
+	-imageHash $imageHash `
+	-dbPath $dbPath `
+	-sqlPath $sqlPath
+}
+catch {
+	throw $_
+}''' ScriptOutput=> DuplicatePath ScriptError=> DupeScriptError
+            END
+            IF IsEmpty(DuplicatePath) THEN
+                OCR.ExtractTextWithOCR.ExtractTextFromFileWithWindowsOcr ImageFile: MemeCopy WindowsOcrLanguage: OCR.WindowsOcrLanguage.English ImageWidthMultiplier: 1 ImageHeightMultiplier: 1 OcrText=> OcrText
+                # Prompt GPT to analyze the image
+                Scripting.RunPowershellScript.RunScript Script: $'''$ScriptPath = @\'
+%GptScriptPath%
+\'@
+$originalHash = @\'
+%OriginalMd5Hash%
+\'@
+$normalHash = @\'
+%NormalMd5Hash%
+\'@
+$processedAt = @\'
+%CurrentDateTime%
+\'@
+$ocrText = @\'
+%OcrText%
+\'@
+$originalName = @\'
+%OriginalFileName%
+\'@
+$version = @\'
+%Version%
+\'@
+$debugFolder = @\'
+%DebugFolder%
+\'@
+$imagePath = @\'
+%NormalCopy%
+\'@
+$safeFile = @\'
+%SafeFileName%
+\'@
+
+try {
+& $ScriptPath `
+	-originalHash $originalHash `
+	-normalHash $normalHash `
+	-processedAt $processedAt `
+	-ocrText $ocrText `
+	-originalName $originalName `
+	-version $version `
+	-debugFolder $debugFolder `
+	-imagePath $imagePath `
+	-safeFile $safeFile
+}
+catch {
+	throw $_
+}''' ScriptOutput=> JSONResponse ScriptError=> GptScriptError
+                IF IsNotEmpty(JSONResponse) THEN
+                    Variables.ConvertJsonToCustomObject Json: JSONResponse CustomObject=> ResponseObject
+                    # Generate a new filename
+                    Scripting.RunPowershellScript.RunScript Script: $'''$ScriptPath = @\'
+%FilenameScriptPath%
+\'@
+$json = @\'
+%JSONResponse%
+\'@
+$normalHash = @\'
+%NormalMd5Hash%
+\'@
+
+try {
+& $ScriptPath `
+	-json $json `
+	-normalHash $normalHash
+}
+catch {
+	throw $_
+}''' ScriptOutput=> NewName ScriptError=> FilenameScriptError
+                    CALL 'Rename File' FilePath: CurrentMeme NewName: $'''%NewName%%RealExtension%''' SourceFolder: InboxFolder NewPath=> CurrentMeme
+                    # Convert the image to the best fit format
+                    Scripting.RunPowershellScript.RunScript Script: $'''$ScriptPath = @\'
+%ConvertScriptPath%
+\'@
+$currentMeme = @\'
+%CurrentMeme%
+\'@
+$normalMeme = @\'
+%NormalCopy%
+\'@
+$realExtension = @\'
+%RealExtension%
+\'@
+$ocrClean = @\'
+%ResponseObject.visible_text%
+\'@
+
+try {
+& $ScriptPath `
+	-currentMeme $currentMeme `
+	-normalMeme $normalMeme `
+	-realExtension $realExtension `
+	-ocrClean $ocrClean
+}
+catch {
+	throw $_
+}''' ScriptOutput=> CurrentMeme ScriptError=> ConvertScriptError
+                    File.GetPathPart File: CurrentMeme FileName=> NewFileName
+                    IF ResponseObject.confidence < 0.65 THEN
+                        SET DestinationFolder TO ReviewFolder
+                    ELSE
+                        SET DestinationFolder TO $'''%ProcessedFolder%\\%ResponseObject.category%'''
+                        CALL 'Create Folder' NewFolder: DestinationFolder RootFolder: RootFolder
+                    END
+                    File.Move Files: CurrentMeme Destination: DestinationFolder IfFileExists: File.IfExists.Overwrite
+                    SET FinalImagePath TO $'''%DestinationFolder%\\%NewFileName%'''
+                    # Write EXIF data using exiftool
+                    Scripting.RunPowershellScript.RunScript Script: $'''$ScriptPath =@\'
+%ExifScriptPath%
+\'@
+$json =@\'
+%JSONResponse%
+\'@
+$filePath =@\'
+%FinalImagePath%
+\'@
+$exifTool =@\'
+%ExiftoolExe%
+\'@
+$date =@\'
+%FormattedDateTime%
+\'@
+
+try {
+& $ScriptPath `
+	-json $json `
+	-exifTool $exifTool `
+	-filePath $filePath `
+	-date $date
+}
+catch {
+	throw $_
+}''' ScriptOutput=> ExifToolOutput ScriptError=> ExifScriptError
+                    # Get new md5 hash
+                    Scripting.RunPowershellScript.RunScript Script: $'''$ScriptPath =@\'
+%HashScriptPath%
+\'@
+$source =@\'
+%FinalImagePath%
+\'@
+
+try {
+	& $ScriptPath `
+		-source $source
+}
+catch {
+	throw $_
+}''' ScriptOutput=> ProcessedMd5Hash ScriptError=> HashScriptError
+                    # Insert new hash into JSON
+                    Scripting.RunPowershellScript.RunScript Script: $'''$ScriptPath =@\'
+%SidecarScriptPath%
+\'@
+$json =@\'
+%JSONResponse%
+\'@
+$processedHash =@\'
+%ProcessedMd5Hash%
+\'@
+
+try {
+	& $ScriptPath `
+		-json $json `
+		-processedHash $processedHash
+}
+catch {
+	throw $_
+}''' ScriptOutput=> JSONResponse ScriptError=> SidecarScriptError
+                    SET MetadataFilePath TO $'''%MetadataFolder%\\%NewFileName%.json'''
+                    File.WriteText File: MetadataFilePath TextToWrite: JSONResponse AppendNewLine: False IfFileExists: File.IfFileExists.Overwrite Encoding: File.FileEncoding.Unicode
+                    # Create/update SQLite record
+                    Scripting.RunPowershellScript.RunScript Script: $'''$ScriptPath = @\'
+%SqlScriptPath%
+\'@
+$sqlite = @\'
+%SqliteExe%
+\'@
+$dbPath = @\'
+%DbPath%
+\'@
+$imagePath = @\'
+%FinalImagePath%
+\'@
+$metadataPath = @\'
+%MetadataFolder%
+\'@
+$json = @\'
+%JSONResponse%
+\'@
+$fileName = @\'
+%OriginalFileName%
+\'@
+$debugFolder = @\'
+%DebugFolder%
+\'@
+$safeFile = @\'
+%SafeFileName%
+\'@
+
+try {
+& $ScriptPath `
+	-sqlite $sqlite `
+	-dbPath $dbPath `
+	-imagePath $imagePath `
+	-metadataPath $metadataPath `
+	-json $json `
+	-fileName $fileName `
+	-debugFolder $debugFolder `
+	-safeFile $safeFile
+}
+catch {
+	throw $_
+}''' ScriptOutput=> SqliteOutput ScriptError=> SqlScriptError
+                ELSE
+                    CALL 'Image Error' FormattedDateTime: FormattedDateTime Iteration: Iteration ImageError: $'''%OriginalFileName% - empty response from GPT''' DebugFolder: DebugFolder MoveFolder: ErrorFolder ImageFile: CurrentMeme
+                END
+            ELSE
+                CALL 'Image Error' FormattedDateTime: FormattedDateTime Iteration: Iteration ImageError: $'''%OriginalFileName% matches %DuplicatePath%''' DebugFolder: DebugFolder MoveFolder: ErrorFolder ImageFile: CurrentMeme
+                File.Delete Files: $'''\\\\?\\%ErrorFolder%\\%OriginalFileName%'''
+            END
+        ELSE
+            CALL 'Image Error' FormattedDateTime: FormattedDateTime Iteration: Iteration ImageError: $'''%OriginalFileName% - animated file: %SafeExtension%''' DebugFolder: DebugFolder MoveFolder: AnimatedFolder ImageFile: CurrentMeme
+        END
+    ELSE
+        CALL 'Image Error' FormattedDateTime: FormattedDateTime Iteration: Iteration ImageError: $'''%OriginalFileName% - invalid file type''' DebugFolder: DebugFolder MoveFolder: ErrorFolder ImageFile: CurrentMeme
+    END
+END
+**REGION Error Handling
+ERROR => PadError Reset: True
+IF PadError <> $'''No Error''' THEN
+    SET ErrorTrue TO $'''true'''
+    IF (File.IfFile.Exists File: CurrentMeme) THEN
+        File.Move Files: CurrentMeme Destination: ErrorFolder IfFileExists: File.IfExists.Overwrite
+    END
+ELSE IF IsNotEmpty($'''%AnimScriptError%%ConvertScriptError%%DupeScriptError%%ExifScriptError%%FilenameScriptError%%GptScriptError%%SqlScriptError%%VerifyScriptError%%NormalizeScriptError%%HashScriptError%%SidecarScriptError%''') THEN
+    SET ErrorTrue TO $'''true'''
+END
+SET FinalJsonPath TO $'''%DebugFolder%\\debug_final_json_%SafeFileName%.json'''
+SET FullResponsePath TO $'''%DebugFolder%\\debug_full_response_%SafeFileName%.json'''
+SET ModelTextPath TO $'''%DebugFolder%\\debug_model_text_%SafeFileName%.json'''
+SET PsTracePath TO $'''%DebugFolder%\\debug_powershell_trace_%SafeFileName%.txt'''
+SET NameHintPath TO $'''%DebugFolder%\\debug_filename_hint_%SafeFileName%.txt'''
+SET OcrCleanPath TO $'''%DebugFolder%\\debug_ocr_clean_%SafeFileName%.txt'''
+SET PromptPath TO $'''%DebugFolder%\\debug_prompt_%SafeFileName%.txt'''
+SET SqlUpsertPath TO $'''%DebugFolder%\\sqlite_upsert_%SafeFileName%.sql'''
+CALL 'Safely Read and Delete File' FilePath: FinalJsonPath FileContents=> FinalJsonContents
+CALL 'Safely Read and Delete File' FilePath: FullResponsePath FileContents=> FullResponseContents
+CALL 'Safely Read and Delete File' FilePath: ModelTextPath FileContents=> ModelTextContents
+CALL 'Safely Read and Delete File' FilePath: PsTracePath FileContents=> PsTraceContents
+CALL 'Safely Read and Delete File' FilePath: SqlUpsertPath FileContents=> SqlUpsertContents
+CALL 'Safely Read and Delete File' FilePath: OcrCleanPath FileContents=> OcrCleanContents
+CALL 'Safely Read and Delete File' FilePath: NameHintPath FileContents=> NameHintContents
+CALL 'Safely Read and Delete File' FilePath: PromptPath FileContents=> PromptContents
+IF (File.IfFile.Exists File: MemeCopy) THEN
+    File.Delete Files: MemeCopy
+END
+IF (File.IfFile.Exists File: NormalCopy) THEN
+    File.Delete Files: NormalCopy
+END
+IF ErrorTrue = $'''true''' THEN
+    File.WriteText File: $'''%DebugFolder%\\diagnostic-%SafeName%.md''' TextToWrite: $'''# File Information
+Original Filename: %OriginalFileName%
+Safe Filename: %SafeFileName%
+New Filename: %NewFileName%
+Original Hash: %OriginalMd5Hash%
+Normalized Hash: %NormalMd5Hash%
+Processed Hash: %ProcessedMd5Hash%
+
+# Sorter Information
+Sort Time: %FormattedDateTime%
+Loop Iteration: %Iteration%
+Sort version: %Version%
+Duplicate Script: %DupeScript%
+Exif Script: %ExifScript%
+GPT Script: %GptScript%
+Filename Script: %FilenameScript%
+SQL Script: %SqlScript%
+Animation Script: %AnimScript%
+Convert Script: %ConvertScript%
+Verify Script: %VerifyScript%
+Normalize Script: %NormalizeScript%
+Hash Script: %HashScript%
+Sidecar Script: %SidecarScript%
+
+# PAD Error
+%PadError%
+
+# Script Errors
+
+## Duplicate Script
+%DupeScriptError%
+
+## Exif Script
+%ExifScriptError%
+
+## GPT Script
+%GptScriptError%
+
+## Filename Script
+%FilenameScriptError%
+
+## SQL Script
+%SqlScriptError%
+
+## Animation Script
+%AnimScriptError%
+
+## Convert Script
+%ConvertScriptError%
+
+## Verify Script
+%VerifyScriptError%
+
+## Normalize Script
+%NormalizeScriptError%
+
+## Hash Script
+%HashScriptError%
+
+## Sidecar Script
+%SidecarScriptError%
+
+# File Text Information
+
+## OCR Raw
+%OcrText%
+
+## OCR Clean
+%OcrCleanContents%
+
+## Filename Hint
+%NameHintContents%
+
+# Analysis Information
+
+## Powershell Trace
+%PsTraceContents%
+
+## Prompt Text
+%PromptContents%
+
+## Full Response
+%FullResponseContents%
+
+## Model Text
+%ModelTextContents%
+
+## Final Json
+%FinalJsonContents%
+
+# ExifTool v2 log
+%ExifToolOutput%
+
+# SQL Upsert log
+%SqlUpsertContents%''' AppendNewLine: False IfFileExists: File.IfFileExists.Overwrite Encoding: File.FileEncoding.Unicode
+END
+**ENDREGION

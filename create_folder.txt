@@ -1,0 +1,3 @@
+IF (Folder.IfFolderExists.DoesNotExist Path: NewFolder) THEN
+    Folder.Create FolderPath: RootFolder FolderName: NewFolder
+END

@@ -1,0 +1,56 @@
+**REGION Header
+SET Version TO $'''MemeDaemon 1.0'''
+**REGION Initialize Scripts
+SET ScriptFolder TO $'''C:\\MemeOrganizer'''
+SET DupeScript TO $'''duplicate_1.0.ps1'''
+SET ExifScript TO $'''exiftool_1.0.ps1'''
+SET GptScript TO $'''gpt_1.0.ps1'''
+SET FilenameScript TO $'''filename_1.0.ps1'''
+SET SqlScript TO $'''sql_upsert_1.0.ps1'''
+SET AnimScript TO $'''animated_1.0.ps1'''
+SET ConvertScript TO $'''convert_1.0.ps1'''
+SET VerifyScript TO $'''verify_1.0.ps1'''
+SET NormalizeScript TO $'''normalize_1.0.ps1'''
+SET HashScript TO $'''get_hash_1.0.ps1'''
+SET SidecarScript TO $'''sidecar_1.0.ps1'''
+SET DupeScriptPath TO $'''%ScriptFolder%\\%DupeScript%'''
+SET ExifScriptPath TO $'''%ScriptFolder%\\%ExifScript%'''
+SET GptScriptPath TO $'''%ScriptFolder%\\%GptScript%'''
+SET FilenameScriptPath TO $'''%ScriptFolder%\\%FilenameScript%'''
+SET SqlScriptPath TO $'''%ScriptFolder%\\%SqlScript%'''
+SET AnimScriptPath TO $'''%ScriptFolder%\\%AnimScript%'''
+SET ConvertScriptPath TO $'''%ScriptFolder%\\%ConvertScript%'''
+SET VerifyScriptPath TO $'''%ScriptFolder%\\%VerifyScript%'''
+SET NormalizeScriptPath TO $'''%ScriptFolder%\\%NormalizeScript%'''
+SET HashScriptPath TO $'''%ScriptFolder%\\%HashScript%'''
+SET SidecarScriptPath TO $'''%ScriptFolder%\\%SidecarScript%'''
+**ENDREGION
+**REGION Initialize Folders
+SET RootFolder TO $'''C:\\img'''
+SET InboxFolder TO $'''%RootFolder%\\!Sort'''
+SET ProcessedFolder TO $'''%RootFolder%\\!Processed'''
+SET MetadataFolder TO $'''%RootFolder%\\!Metadata'''
+SET ErrorFolder TO $'''%RootFolder%\\!Error'''
+SET ReviewFolder TO $'''%RootFolder%\\!NeedsReview'''
+SET AnimatedFolder TO $'''%RootFolder%\\!Animated'''
+SET DebugFolder TO $'''%RootFolder%\\!Debug'''
+CALL 'Create Folder' NewFolder: InboxFolder RootFolder: RootFolder
+CALL 'Create Folder' NewFolder: ProcessedFolder RootFolder: RootFolder
+CALL 'Create Folder' NewFolder: MetadataFolder RootFolder: RootFolder
+CALL 'Create Folder' NewFolder: ReviewFolder RootFolder: RootFolder
+CALL 'Create Folder' NewFolder: AnimatedFolder RootFolder: RootFolder
+CALL 'Create Folder' NewFolder: DebugFolder RootFolder: RootFolder
+CALL 'Create Folder' NewFolder: ErrorFolder RootFolder: RootFolder
+**ENDREGION
+SET DbPath TO $'''%RootFolder%\\meme_index.sqlite'''
+SET SqliteExe TO $'''C:\\sqlite\\sqlite3.exe'''
+SET ExiftoolExe TO $'''C:\\exiftool\\exiftool.exe'''
+**ENDREGION
+SET Iteration TO 1
+LOOP WHILE (1) = (1)
+    Folder.GetFiles Folder: InboxFolder FileFilter: $'''*.jpg;*.jpeg;*.jfif;*.png;*.webp;*.gif;*.bmp;*.webm;*.mp4;*.jxl;*.heic;*.avif;*.tiff''' IncludeSubfolders: False FailOnAccessDenied: True SortBy1: Folder.SortBy.NoSort SortDescending1: False SortBy2: Folder.SortBy.NoSort SortDescending2: False SortBy3: Folder.SortBy.NoSort SortDescending3: False Files=> MemeFiles
+    LOOP FOREACH CurrentMeme IN MemeFiles
+        CALL 'Loop' AnimScriptPath: AnimScriptPath ConvertScriptPath: ConvertScriptPath DebugFolder: DebugFolder ExiftoolExe: ExiftoolExe DupeScriptPath: DupeScriptPath DbPath: DbPath SqliteExe: SqliteExe GptScriptPath: GptScriptPath Version: Version MetadataFolder: MetadataFolder FilenameScriptPath: FilenameScriptPath ReviewFolder: ReviewFolder ProcessedFolder: ProcessedFolder RootFolder: RootFolder SqlScriptPath: SqlScriptPath ExifScriptPath: ExifScriptPath ErrorFolder: ErrorFolder AnimatedFolder: AnimatedFolder DupeScript: DupeScript ExifScript: ExifScript GptScript: GptScript FilenameScript: FilenameScript SqlScript: SqlScript AnimScript: AnimScript ConvertScript: ConvertScript CurrentMeme: CurrentMeme VerifyScriptPath: VerifyScriptPath VerifyScript: VerifyScript InboxFolder: InboxFolder Iteration: Iteration NormalizeScript: NormalizeScript HashScript: HashScript SidecarScript: SidecarScript HashScriptPath: HashScriptPath NormalizeScriptPath: NormalizeScriptPath SidecarScriptPath: SidecarScriptPath
+        Variables.IncreaseVariable Value: Iteration IncrementValue: 1
+    END
+END

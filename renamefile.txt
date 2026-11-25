@@ -1,0 +1,2 @@
+File.RenameFiles.Rename Files: $'''\\\\?\\%FilePath%''' NewName: NewName KeepExtension: False IfFileExists: File.IfExists.DoNothing
+SET NewPath TO $'''%SourceFolder%\\%NewName%'''

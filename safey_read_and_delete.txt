@@ -1,0 +1,8 @@
+
+FUNCTION 'Safely Read and Delete File' FilePath, OUTPUT FileContents
+    @SENSITIVE: []
+    IF (File.IfFile.Exists File: FilePath) THEN
+        File.ReadTextFromFile.ReadText File: FilePath Encoding: File.TextFileEncoding.UTF8 Content=> FileContents
+        File.Delete Files: FilePath
+    END
+END FUNCTION
